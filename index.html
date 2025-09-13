@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SkyBuddy — Airline Chatbot</title>
+  <style>
+    :root{
+      --bg:#f6f7fb;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#6b7280;
+      --primary:#2563eb;
+      --primary-weak:#e8f0ff;
+      --ring:#dbeafe;
+      --bubble-user:#e8f0ff;
+      --bubble-bot:#ffffff;
+      --shadow: 0 8px 30px rgba(2,6,23,0.08);
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      color:var(--text); background:var(--bg);
+      background-image: radial-gradient(1200px 450px at 80% -50%, #eef2ff 40%, transparent),
+                        radial-gradient(1000px 350px at -10% -30%, #e0f2fe 35%, transparent);
+    }
+    .wrap{
+      max-width:920px; margin-inline:auto; padding:24px; min-height:100%;
+      display:flex; flex-direction:column; gap:20px;
+    }
+    header{
+      background:var(--card); border:1px solid var(--ring); border-radius:var(--radius);
+      padding:18px 20px; box-shadow:var(--shadow); display:flex; align-items:center; gap:14px;
+    }
+    .logo{
+      width:44px; height:44px; border-radius:50%;
+      display:grid; place-items:center;
+      background:conic-gradient(from 210deg, #93c5fd, #60a5fa, #a78bfa);
+      color:white; font-weight:800; letter-spacing:.5px;
+      box-shadow: 0 8px 18px rgba(37,99,235,.28);
+    }
+    .heading h1{margin:0; font-size:20px}
+    .heading p{margin:2px 0 0; color:var(--muted); font-size:14px}
+    .chips{display:flex; gap:10px; flex-wrap:wrap}
+    .chip{
+      background:var(--primary-weak); color:#1e293b; border:1px solid var(--ring);
+      padding:8px 12px; border-radius:999px; cursor:pointer; font-size:14px;
+      transition:.15s transform ease;
+    }
+    .chip:hover{transform:translateY(-1px)}
+    .board{
+      background:var(--card); border:1px solid var(--ring); border-radius:var(--radius);
+      box-shadow:var(--shadow); flex:1; display:flex; flex-direction:column;
+      overflow:hidden; min-height:420px;
+    }
+    .messages{
+      padding:18px; display:flex; flex-direction:column; gap:14px; overflow:auto;
+      scroll-behavior:smooth;
+    }
+    .row{display:flex; gap:12px; align-items:flex-end}
+    .row.user{justify-content:flex-end}
+    .bubble{
+      max-width:min(75%, 680px); padding:12px 14px; border-radius:14px;
+      border:1px solid var(--ring); line-height:1.45; background:var(--bubble-bot);
+      white-space:pre-wrap; word-wrap:break-word;
+    }
+    .row.user .bubble{background:var(--bubble-user)}
+    .meta{font-size:12px; color:var(--muted); margin-top:4px}
+    .source{display:block; margin-top:8px; font-size:13px}
+    .source a{color:var(--primary); text-decoration:none}
+    .source a:hover{text-decoration:underline}
+    .composer{
+      border-top:1px solid var(--ring); padding:12px; background:linear-gradient(#fff,#fbfdff);
+      display:flex; gap:10px;
+    }
+    .input{
+      flex:1; border:1px solid var(--ring); background:#fff; border-radius:12px;
+      padding:14px 12px; font-size:15px; outline:none;
+    }
+    .btn{
+      background:var(--primary); color:#fff; border:none; padding:0 18px; border-radius:12px;
+      font-weight:600; cursor:pointer; transition:.15s transform ease; height:46px;
+    }
+    .btn:hover{transform:translateY(-1px)}
+    .hint{color:var(--muted); font-size:12px; margin:2px 12px 0}
+    .notice{
+      background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;
+      padding:10px 12px; border-radius:10px; font-size:14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">✈</div>
+      <div class="heading">
+        <h1>SkyBuddy</h1>
+        <p>Your friendly airline helper — ask about flights near a place, baggage rules, TSA liquids & power banks, airport codes, and more.</p>
+      </div>
+    </header>
+
+    <div class="chips" id="chips">
+      <button class="chip">Flights near LAX</button>
+      <button class="chip">United baggage</button>
+      <button class="chip">What’s the liquids rule?</button>
+      <button class="chip">Can I carry 20000 mAh power bank?</button>
+      <button class="chip">Airport in Tokyo</button>
+    </div>
+
+    <section class="board">
+      <div class="messages" id="messages"></div>
+      <div class="composer">
+        <input id="msgInput" class="input" placeholder="Ask anything… e.g., ‘baggage for United’, ‘planes over New York’, ‘DFW’" />
+        <button id="sendBtn" class="btn">Send</button>
+      </div>
+      <div class="hint">Tip: the first request may take a few seconds if the server is waking up.</div>
+    </section>
+  </div>
+
+  <script>
+    // ====== Configure your API here ======
+    const API_BASE = "https://airline-bot-do27.onrender.com"; // <-- your Render URL
+    const CHAT_URL = ${API_BASE}/chat;
+
+    const $messages = document.getElementById('messages');
+    const $input    = document.getElementById('msgInput');
+    const $send     = document.getElementById('sendBtn');
+
+    // Seed a friendly intro
+    addBot("Hi, I’m SkyBuddy! ✈\n• Airline baggage links (e.g., “United baggage”, “AA carry on size”) \n• TSA liquids & power banks (e.g., “what’s the liquids rule”, ‘is 20000 mAh allowed?’)\n• Live planes near a place (e.g., “flights near New York”) \n• Airport info by code/name/city (e.g., “DFW”, “airport in Tokyo”).");
+
+    // Quick chips
+    document.getElementById('chips').addEventListener('click', (e)=>{
+      if(e.target.classList.contains('chip')){
+        $input.value = e.target.textContent;
+        sendNow();
+      }
+    });
+
+    $send.addEventListener('click', sendNow);
+    $input.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter') sendNow();
+    });
+
+    async function sendNow(){
+      const text = $input.value.trim();
+      if(!text) return;
+      addUser(text);
+      $input.value = '';
+      await askAPI(text);
+    }
+
+    function addUser(text){
+      addRow('user', text);
+    }
+    function addBot(text, sourceUrl){
+      const row = addRow('bot', text);
+      if(sourceUrl){
+        const src = document.createElement('div');
+        src.className = 'source';
+        src.innerHTML = source: <a href="${sourceUrl}" target="_blank" rel="noopener"> ${sourceUrl} </a>;
+        row.querySelector('.bubble').appendChild(src);
+      }
+    }
+    function addNotice(text){
+      const row = document.createElement('div');
+      row.className = 'row';
+      const b = document.createElement('div');
+      b.className = 'notice';
+      b.textContent = text;
+      row.appendChild(b);
+      $messages.appendChild(row);
+      scrollBottom();
+    }
+    function addRow(kind, text){
+      const row = document.createElement('div');
+      row.className = 'row ' + (kind === 'user' ? 'user' : 'bot');
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      $messages.appendChild(row);
+      scrollBottom();
+      return row;
+    }
+    function scrollBottom(){ $messages.scrollTop = $messages.scrollHeight; }
+
+    async function askAPI(userText){
+      // Show a lightweight “typing” hint
+      const thinking = addRow('bot', '…');
+      try{
+        const r = await fetch(CHAT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: userText })
+        });
+
+        // If the free Render dyno is waking
+        if(r.status === 522 || r.status === 524){
+          thinking.remove();
+          addNotice('Waking the server… please try again in a few seconds.');
+          return;
+        }
+
+        if(!r.ok){
+          thinking.remove();
+          addNotice(Error ${r.status}: ${r.statusText});
+          return;
+        }
+        const data = await r.json();
+        thinking.remove();
+        addBot(data.answer || 'No reply.', data.source);
+      }catch(err){
+        thinking.remove();
+        addNotice('Network error. Check your internet and try again.');
+        console.error(err);
+      }
+    }
+  </script>
+</body>
+</html>
