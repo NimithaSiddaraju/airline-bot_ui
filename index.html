@@ -1,190 +1,213 @@
-# app/main.py
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import pandas as pd
-import httpx
-import re
-import math
-from typing import Tuple, Optional, List
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SkyBuddy — Airline Chatbot</title>
+  <style>
+    :root{
+      --bg:#f6f7fb;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#6b7280;
+      --primary:#2563eb;
+      --primary-weak:#e8f0ff;
+      --ring:#dbeafe;
+      --bubble-user:#e8f0ff;
+      --bubble-bot:#ffffff;
+      --shadow: 0 8px 30px rgba(2,6,23,0.08);
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      color:var(--text); background:var(--bg);
+      background-image: radial-gradient(1200px 450px at 80% -50%, #eef2ff 40%, transparent),
+                        radial-gradient(1000px 350px at -10% -30%, #e0f2fe 35%, transparent);
+    }
+    .wrap{
+      max-width:920px; margin-inline:auto; padding:24px; min-height:100%;
+      display:flex; flex-direction:column; gap:20px;
+    }
+    header{
+      background:var(--card); border:1px solid var(--ring); border-radius:var(--radius);
+      padding:18px 20px; box-shadow:var(--shadow); display:flex; align-items:center; gap:14px;
+    }
+    .logo{
+      width:44px; height:44px; border-radius:50%;
+      display:grid; place-items:center;
+      background:conic-gradient(from 210deg, #93c5fd, #60a5fa, #a78bfa);
+      color:white; font-weight:800; letter-spacing:.5px;
+      box-shadow: 0 8px 18px rgba(37,99,235,.28);
+    }
+    .heading h1{margin:0; font-size:20px}
+    .heading p{margin:2px 0 0; color:var(--muted); font-size:14px}
+    .chips{display:flex; gap:10px; flex-wrap:wrap}
+    .chip{
+      background:var(--primary-weak); color:#1e293b; border:1px solid var(--ring);
+      padding:8px 12px; border-radius:999px; cursor:pointer; font-size:14px;
+      transition:.15s transform ease;
+    }
+    .chip:hover{transform:translateY(-1px)}
+    .board{
+      background:var(--card); border:1px solid var(--ring); border-radius:var(--radius);
+      box-shadow:var(--shadow); flex:1; display:flex; flex-direction:column;
+      overflow:hidden; min-height:420px;
+    }
+    .messages{
+      padding:18px; display:flex; flex-direction:column; gap:14px; overflow:auto;
+      scroll-behavior:smooth;
+    }
+    .row{display:flex; gap:12px; align-items:flex-end}
+    .row.user{justify-content:flex-end}
+    .bubble{
+      max-width:min(75%, 680px); padding:12px 14px; border-radius:14px;
+      border:1px solid var(--ring); line-height:1.45; background:var(--bubble-bot);
+      white-space:pre-wrap; word-wrap:break-word;
+    }
+    .row.user .bubble{background:var(--bubble-user)}
+    .meta{font-size:12px; color:var(--muted); margin-top:4px}
+    .source{display:block; margin-top:8px; font-size:13px}
+    .source a{color:var(--primary); text-decoration:none}
+    .source a:hover{text-decoration:underline}
+    .composer{
+      border-top:1px solid var(--ring); padding:12px; background:linear-gradient(#fff,#fbfdff);
+      display:flex; gap:10px;
+    }
+    .input{
+      flex:1; border:1px solid var(--ring); background:#fff; border-radius:12px;
+      padding:14px 12px; font-size:15px; outline:none;
+    }
+    .btn{
+      background:var(--primary); color:#fff; border:none; padding:0 18px; border-radius:12px;
+      font-weight:600; cursor:pointer; transition:.15s transform ease; height:46px;
+    }
+    .btn:hover{transform:translateY(-1px)}
+    .hint{color:var(--muted); font-size:12px; margin:2px 12px 0}
+    .notice{
+      background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;
+      padding:10px 12px; border-radius:10px; font-size:14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">✈</div>
+      <div class="heading">
+        <h1>SkyBuddy</h1>
+        <p>Your friendly airline helper — baggage rules, TSA liquids & power banks, live flights, airport codes, and more.</p>
+      </div>
+    </header>
 
-# ============================================================
-# Remote reference data
-# ============================================================
-AIRPORTS_URL = "https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat"
-COLS = ["id","name","city","country","IATA","ICAO","lat","lon","alt_ft","tz_offset","dst","tzdb","type","source"]
-airports = pd.read_csv(AIRPORTS_URL, header=None, names=COLS)
+    <div class="chips" id="chips">
+      <button class="chip">Flights from LAX</button>
+      <button class="chip">Flights to DFW</button>
+      <button class="chip">United baggage</button>
+      <button class="chip">What’s the liquids rule?</button>
+      <button class="chip">Can I carry 20000 mAh power bank?</button>
+    </div>
 
-airports["city_l"] = airports["city"].fillna("").str.lower()
-airports["name_l"] = airports["name"].fillna("").str.lower()
-iata_set = set(airports["IATA"].dropna().astype(str))
+    <section class="board">
+      <div class="messages" id="messages"></div>
+      <div class="composer">
+        <input id="msgInput" class="input" placeholder="Ask anything… e.g., ‘Flights from LAX’, ‘Flights to DFW’, ‘United baggage’, ‘DFW’" />
+        <button id="sendBtn" class="btn">Send</button>
+      </div>
+      <div class="hint">Tip: the first request may take a few seconds if the server is waking up.</div>
+    </section>
+  </div>
 
-# ============================================================
-# Helpers
-# ============================================================
+  <script>
+    // ====== Configure your API here ======
+    const CHAT_URL = "https://airline-bot-do27.onrender.com/chat"; // <-- Your Render backend
 
-def normalize(s: str) -> str:
-    return re.sub(r"\s+", " ", s.strip().lower())
+    const $messages = document.getElementById('messages');
+    const $input    = document.getElementById('msgInput');
+    const $send     = document.getElementById('sendBtn');
 
-def detect_iata_tokens(user_msg: str) -> List[str]:
-    tokens = re.findall(r"\b[a-zA-Z]{3}\b", user_msg)
-    hits = [t.upper() if t.isupper() else None for t in tokens]
-    hits = [h for h in hits if h and h in iata_set]
-    if not hits and len(user_msg.strip()) == 3:
-        t = user_msg.strip().upper()
-        if t in iata_set:
-            hits = [t]
-    return hits
+    // Intro message
+    addBot("Hi, I’m SkyBuddy! ✈\n• Airline baggage links\n• TSA liquids & power banks\n• Live flights (e.g., 'Flights from LAX', 'Flights to DFW') — sorted by latest time, with airline & status\n• Airport info by code/name/city.");
 
-# ============================================================
-# AviationStack API (replaces OpenSky)
-# ============================================================
-AVIATIONSTACK_KEY = "5c405fe0aa56286d8e7698ff945dff76"
-AVIATIONSTACK_URL = "http://api.aviationstack.com/v1/flights"
+    // Quick chips
+    document.getElementById('chips').addEventListener('click', (e)=>{
+      if(e.target.classList.contains('chip')){
+        $input.value = e.target.textContent;
+        sendNow();
+      }
+    });
 
-def query_aviationstack(dep_code: Optional[str] = None, arr_code: Optional[str] = None):
-    try:
-        params = {"access_key": AVIATIONSTACK_KEY}
-        if dep_code:
-            params["dep_iata"] = dep_code
-        if arr_code:
-            params["arr_iata"] = arr_code
+    $send.addEventListener('click', sendNow);
+    $input.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter') sendNow();
+    });
 
-        resp = httpx.get(AVIATIONSTACK_URL, params=params, timeout=30.0)
-        if resp.status_code != 200:
-            return None, f"AviationStack status {resp.status_code}"
-        data = resp.json()
-        return data.get("data", []), None
-    except Exception as e:
-        return None, f"AviationStack error: {e}"
+    async function sendNow(){
+      const text = $input.value.trim();
+      if(!text) return;
+      addUser(text);
+      $input.value = '';
+      await askAPI(text);
+    }
 
-# ============================================================
-# FAQs (summaries & links)
-# ============================================================
-def get_tsa_liquids_summary():
-    url = "https://www.tsa.gov/travel/security-screening/whatcanibring/items/travel-size-toiletries"
-    summary = ("TSA liquids rule (3-1-1): containers ≤ 3.4 oz / 100 mL; "
-               "all containers fit in one quart-size bag; one bag per passenger; "
-               "larger volumes → checked bag.")
-    return summary, url
+    function addUser(text){ addRow('user', text); }
+    function addBot(text, sourceUrl){
+      const row = addRow('bot', text);
+      if(sourceUrl){
+        const src = document.createElement('div');
+        src.className = 'source';
+        src.innerHTML = `source: <a href="${sourceUrl}" target="_blank" rel="noopener">${sourceUrl}</a>`;
+        row.querySelector('.bubble').appendChild(src);
+      }
+    }
+    function addNotice(text){
+      const row = document.createElement('div');
+      row.className = 'row';
+      const b = document.createElement('div');
+      b.className = 'notice';
+      b.textContent = text;
+      row.appendChild(b);
+      $messages.appendChild(row);
+      scrollBottom();
+    }
+    function addRow(kind, text){
+      const row = document.createElement('div');
+      row.className = 'row ' + (kind === 'user' ? 'user' : 'bot');
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      $messages.appendChild(row);
+      scrollBottom();
+      return row;
+    }
+    function scrollBottom(){ $messages.scrollTop = $messages.scrollHeight; }
 
-def get_faa_powerbank_summary():
-    url = "https://www.faa.gov/hazmat/packsafe/lithium-batteries"
-    summary = ("Power banks (lithium batteries): carry-on only. "
-               "≤100 Wh allowed without airline approval; 100–160 Wh requires approval; "
-               "no checked baggage.")
-    return summary, url
+    async function askAPI(userText){
+      const thinking = addRow('bot', '…');
+      try{
+        const r = await fetch(CHAT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: userText })
+        });
 
-AIRLINE_LINKS = {
-    "american": "https://www.aa.com/i18n/travel-info/baggage/baggage.jsp",
-    "aa":       "https://www.aa.com/i18n/travel-info/baggage/baggage.jsp",
-    "delta":    "https://www.delta.com/traveling-with-us/baggage",
-    "dl":       "https://www.delta.com/traveling-with-us/baggage",
-    "united":   "https://www.united.com/en/us/fly/travel/baggage.html",
-    "ua":       "https://www.united.com/en/us/fly/travel/baggage.html",
-    "southwest":"https://www.southwest.com/help/baggage",
-    "wn":       "https://www.southwest.com/help/baggage",
-    "alaska":   "https://www.alaskaair.com/travel-info/baggage/overview",
-    "as":       "https://www.alaskaair.com/travel-info/baggage/overview",
-    "jetblue":  "https://www.jetblue.com/help/baggage",
-    "b6":       "https://www.jetblue.com/help/baggage",
-}
-ALIAS_TO_NAME = {
-    "aa":"American Airlines","dl":"Delta Air Lines","ua":"United Airlines",
-    "wn":"Southwest Airlines","as":"Alaska Airlines","b6":"JetBlue"
-}
+        if(!r.ok){
+          thinking.remove();
+          addNotice(`Error ${r.status}: ${r.statusText}`);
+          return;
+        }
 
-BAGGAGE_KEYWORDS = ["baggage","bags","luggage","checked bag","carry-on","carry on"]
-
-def get_airline_baggage_link(text: str):
-    t = normalize(text)
-    for key, url in AIRLINE_LINKS.items():
-        if re.search(rf"\b{re.escape(key)}\b", t):
-            return ALIAS_TO_NAME.get(key, key.title()), url
-    return None, None
-
-# ============================================================
-# FastAPI app
-# ============================================================
-app = FastAPI(title="Airline Chatbot", version="2.0.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=False
-)
-
-class Query(BaseModel):
-    message: str
-
-@app.get("/")
-def root():
-    return {"msg": "Airline Chatbot API. Use POST /chat or open /docs for Swagger UI."}
-
-@app.post("/chat")
-async def chat(q: Query):
-    user_msg = q.message.strip()
-    user_l   = normalize(user_msg)
-
-    # FAQs
-    if any(k in user_l for k in ["liquid","toiletries","3-1-1","100ml","100 ml"]):
-        info, src = get_tsa_liquids_summary()
-        return {"answer": info, "source": src}
-
-    if any(k in user_l for k in ["power bank","powerbank","battery","lithium","mah","wh"]):
-        info, src = get_faa_powerbank_summary()
-        return {"answer": info, "source": src}
-
-    if any(k in user_l for k in BAGGAGE_KEYWORDS):
-        name, link = get_airline_baggage_link(user_l)
-        if link:
-            return {"answer": f"Here’s the official baggage policy for {name}:", "source": link}
-        return {"answer": "Tell me the airline (e.g., 'United baggage', 'AA baggage allowance')."}
-
-    # Flights intent
-    codes = detect_iata_tokens(user_msg)
-    if codes:
-        code = codes[0]
-        if "to " in user_l:
-            flights, err = query_aviationstack(arr_code=code)
-            if err:
-                return {"answer": f"Could not fetch live data ({err})."}
-            if flights:
-                examples = []
-                for f in flights[:5]:
-                    fl = f.get("flight", {})
-                    dep = f.get("departure", {})
-                    arr = f.get("arrival", {})
-                    examples.append(f"{fl.get('iata', '??')} {dep.get('iata','?')}→{arr.get('iata','?')}")
-                return {"answer": f"Found {len(flights)} flights to {code}. Examples: {', '.join(examples)}."}
-            return {"answer": f"No live flights arriving at {code} right now."}
-        else:
-            flights, err = query_aviationstack(dep_code=code)
-            if err:
-                return {"answer": f"Could not fetch live data ({err})."}
-            if flights:
-                examples = []
-                for f in flights[:5]:
-                    fl = f.get("flight", {})
-                    dep = f.get("departure", {})
-                    arr = f.get("arrival", {})
-                    examples.append(f"{fl.get('iata', '??')} {dep.get('iata','?')}→{arr.get('iata','?')}")
-                return {"answer": f"Found {len(flights)} flights from {code}. Examples: {', '.join(examples)}."}
-            return {"answer": f"No live flights departing {code} right now."}
-
-    # Airport lookup
-    by_city = airports.loc[airports["city_l"].str.contains(user_l, na=False), ["name","city","country","IATA"]]
-    if not by_city.empty:
-        row = by_city.iloc[0]
-        return {"answer": f"Airport in {row['city']}: {row['name']} (IATA {row['IATA']})."}
-
-    by_name = airports.loc[airports["name_l"].str.contains(user_l, na=False), ["name","city","country","IATA"]]
-    if not by_name.empty:
-        row = by_name.iloc[0]
-        return {"answer": f"{row['name']} is in {row['city']}, {row['country']} (IATA {row['IATA']})."}
-
-    return {"answer": (
-        "I can help with:\n"
-        "• Airline baggage links\n"
-        "• TSA liquids & FAA power banks\n"
-        "• Live flights by IATA code (e.g., 'Flights from LAX' or 'Flights to DFW')\n"
-        "• Airport info by code/name/city"
-    )}
+        const data = await r.json();
+        thinking.remove();
+        addBot(data.answer || 'No reply.', data.source);
+      }catch(err){
+        thinking.remove();
+        addNotice('Network error. Check your internet and try again.');
+        console.error(err);
+      }
+    }
+  </script>
+</body>
+</html>
