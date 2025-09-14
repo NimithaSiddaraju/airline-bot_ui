@@ -121,8 +121,7 @@
 
   <script>
     // ====== Configure your API here ======
-    const API_BASE = "const API_URL = "https://airline-bot-do27.onrender.com/chat";   // <-- your Render URL
-    const CHAT_URL = ${API_BASE}/chat;
+    const CHAT_URL = "https://airline-bot-do27.onrender.com/chat"; // <-- Your Render backend
 
     const $messages = document.getElementById('messages');
     const $input    = document.getElementById('msgInput');
@@ -152,15 +151,13 @@
       await askAPI(text);
     }
 
-    function addUser(text){
-      addRow('user', text);
-    }
+    function addUser(text){ addRow('user', text); }
     function addBot(text, sourceUrl){
       const row = addRow('bot', text);
       if(sourceUrl){
         const src = document.createElement('div');
         src.className = 'source';
-        src.innerHTML = source: <a href="${sourceUrl}" target="_blank" rel="noopener"> ${sourceUrl} </a>;
+        src.innerHTML = `source: <a href="${sourceUrl}" target="_blank" rel="noopener">${sourceUrl}</a>`;
         row.querySelector('.bubble').appendChild(src);
       }
     }
@@ -188,7 +185,6 @@
     function scrollBottom(){ $messages.scrollTop = $messages.scrollHeight; }
 
     async function askAPI(userText){
-      // Show a lightweight “typing” hint
       const thinking = addRow('bot', '…');
       try{
         const r = await fetch(CHAT_URL, {
@@ -197,18 +193,12 @@
           body: JSON.stringify({ message: userText })
         });
 
-        // If the free Render dyno is waking
-        if(r.status === 522 || r.status === 524){
+        if(!r.ok){
           thinking.remove();
-          addNotice('Waking the server… please try again in a few seconds.');
+          addNotice(`Error ${r.status}: ${r.statusText}`);
           return;
         }
 
-        if(!r.ok){
-          thinking.remove();
-          addNotice(Error ${r.status}: ${r.statusText});
-          return;
-        }
         const data = await r.json();
         thinking.remove();
         addBot(data.answer || 'No reply.', data.source);
