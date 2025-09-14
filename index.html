@@ -65,7 +65,11 @@
       max-width:min(75%, 680px); padding:12px 14px; border-radius:14px;
       border:1px solid var(--ring); line-height:1.45; background:var(--bubble-bot);
       white-space:pre-wrap; word-wrap:break-word;
-      animation: fadeIn 0.25s ease;
+      animation: fadeIn .3s ease-in;
+    }
+    @keyframes fadeIn {
+      from {opacity:0; transform: translateY(5px);}
+      to {opacity:1; transform: translateY(0);}
     }
     .row.user .bubble{background:var(--bubble-user)}
     .meta{font-size:12px; color:var(--muted); margin-top:4px}
@@ -90,30 +94,26 @@
       background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;
       padding:10px 12px; border-radius:10px; font-size:14px;
     }
-    /* Typing dots */
-    .typing{display:inline-flex; gap:4px; padding:6px}
-    .dot{
-      width:6px; height:6px; border-radius:50%; background:var(--muted);
-      animation: bounce 1s infinite;
+    .flight-list {
+      margin-top: 10px;
+      padding-left: 20px;
     }
-    .dot:nth-child(2){animation-delay:.2s}
-    .dot:nth-child(3){animation-delay:.4s}
-
-    @keyframes bounce{
-      0%, 80%, 100%{transform:scale(0)}
-      40%{transform:scale(1)}
+    .flight-item {
+      padding:8px 10px;
+      background:#f9fafb;
+      border-radius:10px;
+      margin-top:6px;
+      border:1px solid #e5e7eb;
+      font-size:14px;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      animation: fadeIn .3s ease-in;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(5px);}
-      to { opacity: 1; transform: translateY(0);}
+    .flight-item span {
+      font-weight:600;
+      color: var(--primary);
     }
-    /* Flight card style */
-    .flight-card{
-      background:#f9fafb; border:1px solid var(--ring);
-      border-radius:10px; padding:8px 10px; margin-top:8px;
-      font-size:14px; line-height:1.4;
-    }
-    .flight-status{font-weight:600; color:var(--primary)}
   </style>
 </head>
 <body>
@@ -122,7 +122,7 @@
       <div class="logo">✈</div>
       <div class="heading">
         <h1>SkyBuddy</h1>
-        <p>I can help with live flights, baggage policies, TSA liquids, power banks, and airport info.</p>
+        <p>Your friendly airline helper — ask about flights, baggage rules, TSA liquids, power banks, and airports.</p>
       </div>
     </header>
 
@@ -138,24 +138,23 @@
     <section class="board">
       <div class="messages" id="messages"></div>
       <div class="composer">
-        <input id="msgInput" class="input" placeholder="Ask anything… e.g., ‘Flights from LAX’, ‘United baggage’, ‘DFW’" />
+        <input id="msgInput" class="input" placeholder="Ask anything… e.g., ‘Flights from LAX’, ‘Flights to DFW’, ‘United baggage’, ‘DFW’" />
         <button id="sendBtn" class="btn">Send</button>
       </div>
-      <div class="hint">Tip: first request may take a few seconds if the server is waking up.</div>
+      <div class="hint">Tip: the first request may take a few seconds if the server is waking up.</div>
     </section>
   </div>
 
   <script>
-    const CHAT_URL = "https://airline-bot-do27.onrender.com/chat"; // backend
+    const CHAT_URL = "https://airline-bot-do27.onrender.com/chat";
 
     const $messages = document.getElementById('messages');
     const $input    = document.getElementById('msgInput');
     const $send     = document.getElementById('sendBtn');
 
-    // Intro
-    addBot("👋 Hi, I’m SkyBuddy!\n• Live flights (departures & arrivals)\n• Airline baggage links\n• TSA liquids\n• FAA power banks\n• Airport info");
+    // Intro message
+    addBot("👋 Hi, I’m SkyBuddy!\nHere’s what I can do:\n\n✨ Airline baggage links (e.g., 'United baggage', 'Emirates baggage')\n💧 TSA liquids rule (3-1-1)\n🔋 FAA power bank rules\n🛫 Live flights by IATA code (e.g., 'Flights from LAX', 'Flights to DFW')\n🌍 Airport info by code/name/city (e.g., 'DFW', 'airport in Tokyo').");
 
-    // Quick chips
     document.getElementById('chips').addEventListener('click', (e)=>{
       if(e.target.classList.contains('chip')){
         $input.value = e.target.textContent;
@@ -164,7 +163,9 @@
     });
 
     $send.addEventListener('click', sendNow);
-    $input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') sendNow(); });
+    $input.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter') sendNow();
+    });
 
     async function sendNow(){
       const text = $input.value.trim();
@@ -175,8 +176,21 @@
     }
 
     function addUser(text){ addRow('user', text); }
-    function addBot(text, sourceUrl){
+    function addBot(text, sourceUrl, flights){
       const row = addRow('bot', text);
+
+      if(flights && flights.length){
+        const list = document.createElement('div');
+        list.className = 'flight-list';
+        flights.forEach(f=>{
+          const item = document.createElement('div');
+          item.className = 'flight-item';
+          item.innerHTML = "🛫 " + f;
+          list.appendChild(item);
+        });
+        row.querySelector('.bubble').appendChild(list);
+      }
+
       if(sourceUrl){
         const src = document.createElement('div');
         src.className = 'source';
@@ -208,47 +222,36 @@
     function scrollBottom(){ $messages.scrollTop = $messages.scrollHeight; }
 
     async function askAPI(userText){
-      // Typing dots
-      const row = document.createElement('div');
-      row.className = 'row bot';
-      const bubble = document.createElement('div');
-      bubble.className = 'bubble typing';
-      bubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
-      row.appendChild(bubble);
-      $messages.appendChild(row);
-      scrollBottom();
-
+      const thinking = addRow('bot', '…');
       try{
         const r = await fetch(CHAT_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: userText })
         });
-        row.remove();
 
-        if(!r.ok){ addNotice(`Error ${r.status}: ${r.statusText}`); return; }
+        if(!r.ok){
+          thinking.remove();
+          addNotice(`Error ${r.status}: ${r.statusText}`);
+          return;
+        }
 
         const data = await r.json();
-        let answer = data.answer || 'No reply.';
-        
-        // Render as flight cards if multiple flights
-        if(answer.includes("Examples:")){
-          const parts = answer.split("Examples:");
-          addBot(parts[0].trim());
-          const ex = parts[1].split(",");
-          ex.forEach(f=>{
-            const card = document.createElement('div');
-            card.className = 'flight-card';
-            card.innerText = f.trim();
-            $messages.appendChild(card);
-          });
-          scrollBottom();
+        thinking.remove();
+
+        // If flights are included in the answer, split them into list
+        if(data.answer && data.answer.includes("flights")){
+          const lines = data.answer.split("\n");
+          const summary = lines[0];
+          const flights = lines.slice(1).filter(l=>l.trim().length);
+          addBot(summary, data.source, flights);
         } else {
-          addBot(answer, data.source);
+          addBot(data.answer || 'No reply.', data.source);
         }
+
       }catch(err){
-        row.remove();
-        addNotice('🌐 Network error. Check your internet and try again.');
+        thinking.remove();
+        addNotice('Network error. Check your internet and try again.');
         console.error(err);
       }
     }
