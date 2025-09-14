@@ -65,6 +65,7 @@
       max-width:min(75%, 680px); padding:12px 14px; border-radius:14px;
       border:1px solid var(--ring); line-height:1.45; background:var(--bubble-bot);
       white-space:pre-wrap; word-wrap:break-word;
+      animation: fadeIn 0.25s ease;
     }
     .row.user .bubble{background:var(--bubble-user)}
     .meta{font-size:12px; color:var(--muted); margin-top:4px}
@@ -89,6 +90,30 @@
       background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;
       padding:10px 12px; border-radius:10px; font-size:14px;
     }
+    /* Typing dots */
+    .typing{display:inline-flex; gap:4px; padding:6px}
+    .dot{
+      width:6px; height:6px; border-radius:50%; background:var(--muted);
+      animation: bounce 1s infinite;
+    }
+    .dot:nth-child(2){animation-delay:.2s}
+    .dot:nth-child(3){animation-delay:.4s}
+
+    @keyframes bounce{
+      0%, 80%, 100%{transform:scale(0)}
+      40%{transform:scale(1)}
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(5px);}
+      to { opacity: 1; transform: translateY(0);}
+    }
+    /* Flight card style */
+    .flight-card{
+      background:#f9fafb; border:1px solid var(--ring);
+      border-radius:10px; padding:8px 10px; margin-top:8px;
+      font-size:14px; line-height:1.4;
+    }
+    .flight-status{font-weight:600; color:var(--primary)}
   </style>
 </head>
 <body>
@@ -97,7 +122,7 @@
       <div class="logo">✈</div>
       <div class="heading">
         <h1>SkyBuddy</h1>
-        <p>Your friendly airline helper — baggage rules, TSA liquids & power banks, live flights, airport codes, and more.</p>
+        <p>I can help with live flights, baggage policies, TSA liquids, power banks, and airport info.</p>
       </div>
     </header>
 
@@ -107,28 +132,28 @@
       <button class="chip">United baggage</button>
       <button class="chip">What’s the liquids rule?</button>
       <button class="chip">Can I carry 20000 mAh power bank?</button>
+      <button class="chip">Airport in Tokyo</button>
     </div>
 
     <section class="board">
       <div class="messages" id="messages"></div>
       <div class="composer">
-        <input id="msgInput" class="input" placeholder="Ask anything… e.g., ‘Flights from LAX’, ‘Flights to DFW’, ‘United baggage’, ‘DFW’" />
+        <input id="msgInput" class="input" placeholder="Ask anything… e.g., ‘Flights from LAX’, ‘United baggage’, ‘DFW’" />
         <button id="sendBtn" class="btn">Send</button>
       </div>
-      <div class="hint">Tip: the first request may take a few seconds if the server is waking up.</div>
+      <div class="hint">Tip: first request may take a few seconds if the server is waking up.</div>
     </section>
   </div>
 
   <script>
-    // ====== Configure your API here ======
-    const CHAT_URL = "https://airline-bot-do27.onrender.com/chat"; // <-- Your Render backend
+    const CHAT_URL = "https://airline-bot-do27.onrender.com/chat"; // backend
 
     const $messages = document.getElementById('messages');
     const $input    = document.getElementById('msgInput');
     const $send     = document.getElementById('sendBtn');
 
-    // Intro message
-    addBot("Hi, I’m SkyBuddy! ✈\n• Airline baggage links\n• TSA liquids & power banks\n• Live flights (e.g., 'Flights from LAX', 'Flights to DFW') — sorted by latest time, with airline & status\n• Airport info by code/name/city.");
+    // Intro
+    addBot("👋 Hi, I’m SkyBuddy!\n• Live flights (departures & arrivals)\n• Airline baggage links\n• TSA liquids\n• FAA power banks\n• Airport info");
 
     // Quick chips
     document.getElementById('chips').addEventListener('click', (e)=>{
@@ -139,9 +164,7 @@
     });
 
     $send.addEventListener('click', sendNow);
-    $input.addEventListener('keydown', (e)=>{
-      if(e.key === 'Enter') sendNow();
-    });
+    $input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') sendNow(); });
 
     async function sendNow(){
       const text = $input.value.trim();
@@ -157,7 +180,7 @@
       if(sourceUrl){
         const src = document.createElement('div');
         src.className = 'source';
-        src.innerHTML = `source: <a href="${sourceUrl}" target="_blank" rel="noopener">${sourceUrl}</a>`;
+        src.innerHTML = `🔗 <a href="${sourceUrl}" target="_blank" rel="noopener">${sourceUrl}</a>`;
         row.querySelector('.bubble').appendChild(src);
       }
     }
@@ -185,26 +208,47 @@
     function scrollBottom(){ $messages.scrollTop = $messages.scrollHeight; }
 
     async function askAPI(userText){
-      const thinking = addRow('bot', '…');
+      // Typing dots
+      const row = document.createElement('div');
+      row.className = 'row bot';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble typing';
+      bubble.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+      row.appendChild(bubble);
+      $messages.appendChild(row);
+      scrollBottom();
+
       try{
         const r = await fetch(CHAT_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: userText })
         });
+        row.remove();
 
-        if(!r.ok){
-          thinking.remove();
-          addNotice(`Error ${r.status}: ${r.statusText}`);
-          return;
-        }
+        if(!r.ok){ addNotice(`Error ${r.status}: ${r.statusText}`); return; }
 
         const data = await r.json();
-        thinking.remove();
-        addBot(data.answer || 'No reply.', data.source);
+        let answer = data.answer || 'No reply.';
+        
+        // Render as flight cards if multiple flights
+        if(answer.includes("Examples:")){
+          const parts = answer.split("Examples:");
+          addBot(parts[0].trim());
+          const ex = parts[1].split(",");
+          ex.forEach(f=>{
+            const card = document.createElement('div');
+            card.className = 'flight-card';
+            card.innerText = f.trim();
+            $messages.appendChild(card);
+          });
+          scrollBottom();
+        } else {
+          addBot(answer, data.source);
+        }
       }catch(err){
-        thinking.remove();
-        addNotice('Network error. Check your internet and try again.');
+        row.remove();
+        addNotice('🌐 Network error. Check your internet and try again.');
         console.error(err);
       }
     }
